@@ -10,7 +10,7 @@
                 "-o",
                 "bin/main.exe",
                 "-lglfw3",
-				"-I${env:VULKAN_SDK}/include",
+                "-I${env:VULKAN_SDK}/include",
                 "-L${env:VULKAN_SDK}/lib",
                 "-lvulkan-1",
             ],
