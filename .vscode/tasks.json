@@ -1,0 +1,28 @@
+{
+    "tasks": [
+        {
+            "label": "Build",
+            "type": "cppbuild",
+            "command": "clang",
+            "args": [
+                "-g",
+                "main.c",
+                "-o",
+                "bin/main.exe",
+                "-lglfw3",
+				"-I${env:VULKAN_SDK}/include",
+                "-L${env:VULKAN_SDK}/lib",
+                "-lvulkan-1",
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "problemMatcher": ["$gcc"],
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            }
+        }
+    ],
+    "version": "2.0.0"
+}
