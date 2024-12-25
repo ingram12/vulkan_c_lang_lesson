@@ -19,6 +19,7 @@ VkSwapchainKHR swapChain;
 VkImage swapChainImages[IMAGE_COUNT];
 VkFormat swapChainImageFormat;
 VkExtent2D swapChainExtent;
+VkImageView swapChainImageViews[IMAGE_COUNT];
 
 void initWindow()
 {
@@ -147,6 +148,34 @@ void createSwapChain() {
     swapChainExtent = createInfo.imageExtent;
 }
 
+VkImageView createImageView(VkImage image, VkFormat format, VkImageAspectFlags aspectFlags, uint32_t mipLevels) {
+    VkImageViewCreateInfo viewInfo = {};
+    viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+    viewInfo.image = image;
+    viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+    viewInfo.format = format;
+    viewInfo.subresourceRange.baseMipLevel = 0;
+    viewInfo.subresourceRange.levelCount = mipLevels;
+    viewInfo.subresourceRange.baseArrayLayer = 0;
+    viewInfo.subresourceRange.layerCount = 1;
+    viewInfo.subresourceRange.aspectMask = aspectFlags;
+
+    VkImageView imageView;
+    if (vkCreateImageView(device, &viewInfo, NULL, &imageView) != VK_SUCCESS) {
+        printf("failed to create render pass!");
+        getchar();
+		exit(EXIT_FAILURE);
+    }
+
+    return imageView;
+}
+
+void createImageViews() {
+    for (size_t i = 0; i < IMAGE_COUNT; i++) {
+        swapChainImageViews[i] = createImageView(swapChainImages[i], swapChainImageFormat, VK_IMAGE_ASPECT_COLOR_BIT, 1);
+    }
+}
+
 void initVulkan()
 {
     createInstance();
@@ -154,6 +183,7 @@ void initVulkan()
     pickPhysicalDevice();
     createLogicalDevice();
     createSwapChain();
+    createImageViews();
 }
 
 void mainLoop()
