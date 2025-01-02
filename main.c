@@ -254,6 +254,7 @@ void initVulkan()
     createSwapChain();
     createImageViews();
     createRenderPass();
+    createFramebuffers();
 }
 
 void mainLoop()
