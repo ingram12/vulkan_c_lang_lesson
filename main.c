@@ -22,6 +22,13 @@ VkExtent2D swapChainExtent;
 VkImageView swapChainImageViews[IMAGE_COUNT];
 VkRenderPass renderPass;
 VkFramebuffer swapChainFramebuffers[IMAGE_COUNT];
+VkPipeline graphicsPipeline;
+VkCommandPool commandPool;
+VkCommandBuffer commandBuffers[IMAGE_COUNT];
+
+VkSemaphore imageAvailableSemaphores[IMAGE_COUNT];
+VkSemaphore renderFinishedSemaphores[IMAGE_COUNT];
+VkFence inFlightFences[IMAGE_COUNT];
 
 void initWindow()
 {
@@ -65,8 +72,8 @@ void createSurface() {
 
     if (res != VK_SUCCESS) {
         printf("failed to create window surface!");
-	getchar();
-	exit(EXIT_FAILURE);
+		getchar();
+		exit(EXIT_FAILURE);
     }
 }
 
@@ -76,8 +83,8 @@ void pickPhysicalDevice() {
     
     if (deviceCount == 0) {
         printf("failed to find GPUs with Vulkan support!");
-	getchar();
-	exit(EXIT_FAILURE);
+		getchar();
+		exit(EXIT_FAILURE);
     }
 
     VkPhysicalDevice *devices = malloc(deviceCount * sizeof(VkPhysicalDevice));
@@ -108,8 +115,8 @@ void createLogicalDevice() {
 
     if (result != VK_SUCCESS) {
         printf("failed to create logical device!");
-	getchar();
-	exit(EXIT_FAILURE);
+		getchar();
+		exit(EXIT_FAILURE);
     }
 
     vkGetDeviceQueue(device, 0, 0, &queue);
@@ -139,7 +146,7 @@ void createSwapChain() {
     if (result != VK_SUCCESS) {
         printf("failed to create swap chain!");
         getchar();
-	exit(EXIT_FAILURE);
+		exit(EXIT_FAILURE);
     }
 
     uint32_t count;
@@ -166,7 +173,7 @@ VkImageView createImageView(VkImage image, VkFormat format, VkImageAspectFlags a
     if (vkCreateImageView(device, &viewInfo, NULL, &imageView) != VK_SUCCESS) {
         printf("failed to create render pass!");
         getchar();
-	exit(EXIT_FAILURE);
+		exit(EXIT_FAILURE);
     }
 
     return imageView;
@@ -218,7 +225,7 @@ void createRenderPass() {
     if (vkCreateRenderPass(device, &renderPassInfo, NULL, &renderPass) != VK_SUCCESS) {
         printf("failed to create render pass!");
         getchar();
-	exit(EXIT_FAILURE);
+		exit(EXIT_FAILURE);
     }
 }
 
@@ -240,7 +247,179 @@ void createFramebuffers() {
         if (vkCreateFramebuffer(device, &framebufferInfo, NULL, &swapChainFramebuffers[i]) != VK_SUCCESS) {
             printf("failed to create framebuffer!");
             getchar();
-	    exit(EXIT_FAILURE);
+            exit(EXIT_FAILURE);
+        }
+    }
+}
+
+uint32_t* readFile(const char *file_name, uint32_t* file_size) {
+    FILE *file;
+    errno_t err = fopen_s(&file, file_name, "rb");
+    if (err != 0) {
+        fprintf(stderr, "Error opening file: %s\n", file_name);
+        return NULL;
+    }
+
+    fseek(file, 0, SEEK_END);
+    long size = ftell(file);
+    fseek(file, 0, SEEK_SET);
+
+    if (size <= 0) {
+        fprintf(stderr, "Error: File size is zero or negative.\n");
+        fclose(file);
+        return NULL;
+    }
+
+    uint32_t *buffer = (uint32_t *)malloc(size);
+    if (!buffer) {
+        fprintf(stderr, "Error: Memory allocation failed.\n");
+        fclose(file);
+        return NULL;
+    }
+
+    size_t bytesRead = fread(buffer, 1, size, file);
+    fclose(file);
+
+    if (bytesRead != size) {
+        fprintf(stderr, "Error reading file: %s\n", file_name);
+        free(buffer);
+        return NULL;
+    }
+
+    *file_size = (uint32_t)size;
+    return buffer;
+}
+
+VkShaderModule createShaderModule(const uint32_t* code, uint32_t file_size) {
+    VkShaderModuleCreateInfo createInfo = {};
+    createInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+    createInfo.codeSize = file_size;
+    createInfo.pCode = code;
+
+    VkShaderModule shaderModule;
+    if (vkCreateShaderModule(device, &createInfo, NULL, &shaderModule) != VK_SUCCESS) {
+        printf("failed to create shader module!");
+        getchar();
+        exit(EXIT_FAILURE);
+    }
+
+    return shaderModule;
+}
+
+void createGraphicsPipeline() {
+    uint32_t file_size_vert = 0;
+    uint32_t file_size_frag = 0;
+    const uint32_t *vertShaderCode = readFile("shaders/vert.spv", &file_size_vert);
+    const uint32_t *fragShaderCode = readFile("shaders/frag.spv", &file_size_frag);
+
+    VkShaderModule vertShaderModule = createShaderModule(vertShaderCode, file_size_vert);
+    VkShaderModule fragShaderModule = createShaderModule(fragShaderCode, file_size_frag);
+
+    VkPipelineShaderStageCreateInfo vertShaderStageInfo = {};
+    vertShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    vertShaderStageInfo.stage = VK_SHADER_STAGE_VERTEX_BIT;
+    vertShaderStageInfo.module = vertShaderModule;
+    vertShaderStageInfo.pName = "main";
+
+    VkPipelineShaderStageCreateInfo fragShaderStageInfo = {};
+    fragShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    fragShaderStageInfo.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+    fragShaderStageInfo.module = fragShaderModule;
+    fragShaderStageInfo.pName = "main";
+
+    VkPipelineShaderStageCreateInfo shaderStages[] = {vertShaderStageInfo, fragShaderStageInfo};
+
+    VkPipelineInputAssemblyStateCreateInfo inputAssembly = {};
+    inputAssembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+    inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+    inputAssembly.primitiveRestartEnable = VK_FALSE;
+
+    VkPipelineViewportStateCreateInfo viewportState = {};
+    viewportState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+    viewportState.viewportCount = 1;
+    viewportState.scissorCount = 1;
+
+    VkPipelineRasterizationStateCreateInfo rasterizer = {};
+    rasterizer.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+    rasterizer.depthClampEnable = VK_FALSE;
+    rasterizer.rasterizerDiscardEnable = VK_FALSE;
+    rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
+    rasterizer.lineWidth = 1.0f;
+    rasterizer.cullMode = VK_CULL_MODE_BACK_BIT;
+    rasterizer.frontFace = VK_FRONT_FACE_CLOCKWISE;
+    rasterizer.depthBiasEnable = VK_FALSE;
+
+    VkDynamicState dynamicStates[] = {
+        VK_DYNAMIC_STATE_VIEWPORT,
+        VK_DYNAMIC_STATE_SCISSOR
+    };
+
+    VkPipelineDynamicStateCreateInfo dynamicState = {};
+    dynamicState.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
+    dynamicState.dynamicStateCount = 2;
+    dynamicState.pDynamicStates = dynamicStates;
+
+    VkGraphicsPipelineCreateInfo pipelineInfo = {};
+    pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+    pipelineInfo.stageCount = 2;
+    pipelineInfo.pStages = shaderStages;
+    pipelineInfo.pInputAssemblyState = &inputAssembly;
+    pipelineInfo.pViewportState = &viewportState;
+    pipelineInfo.pRasterizationState = &rasterizer;
+    pipelineInfo.pDynamicState = &dynamicState;
+    pipelineInfo.renderPass = renderPass;
+    pipelineInfo.subpass = 0;
+    pipelineInfo.basePipelineHandle = VK_NULL_HANDLE;
+
+    if (vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, NULL, &graphicsPipeline) != VK_SUCCESS) {
+        printf("failed to create graphics pipeline!");
+        getchar();
+        exit(EXIT_FAILURE);
+    }
+}
+
+void createCommandPool() {
+    VkCommandPoolCreateInfo poolInfo = {};
+    poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+    poolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+    poolInfo.queueFamilyIndex = 0;
+
+    if (vkCreateCommandPool(device, &poolInfo, NULL, &commandPool) != VK_SUCCESS) {
+        printf("failed to create command pool!");
+        getchar();
+        exit(EXIT_FAILURE);
+    }
+}
+
+void createCommandBuffers() {
+    VkCommandBufferAllocateInfo allocInfo = {};
+    allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+    allocInfo.commandPool = commandPool;
+    allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    allocInfo.commandBufferCount = IMAGE_COUNT;
+
+    if (vkAllocateCommandBuffers(device, &allocInfo, commandBuffers) != VK_SUCCESS) {
+        printf("failed to allocate command buffers!");
+        getchar();
+        exit(EXIT_FAILURE);
+    }
+}
+
+void createSyncObjects() {
+    VkSemaphoreCreateInfo semaphoreInfo = {};
+    semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+
+    VkFenceCreateInfo fenceInfo = {};
+    fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+    fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
+
+    for (size_t i = 0; i < IMAGE_COUNT; i++) {
+        if (vkCreateSemaphore(device, &semaphoreInfo, NULL, &imageAvailableSemaphores[i]) != VK_SUCCESS ||
+            vkCreateSemaphore(device, &semaphoreInfo, NULL, &renderFinishedSemaphores[i]) != VK_SUCCESS ||
+            vkCreateFence(device, &fenceInfo, NULL, &inFlightFences[i]) != VK_SUCCESS) {
+            printf("failed to create synchronization objects for a frame!");
+            getchar();
+            exit(EXIT_FAILURE);
         }
     }
 }
@@ -255,6 +434,10 @@ void initVulkan()
     createImageViews();
     createRenderPass();
     createFramebuffers();
+    createGraphicsPipeline();
+    createCommandPool();
+    createCommandBuffers();
+    createSyncObjects();
 }
 
 void mainLoop()
